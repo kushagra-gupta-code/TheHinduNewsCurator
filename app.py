@@ -226,8 +226,10 @@ def chat():
         return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == '__main__':
+    port = int(os.getenv('PORT', 5000))
     print("\n" + "="*60)
     print("🗞️  THE HINDU NEWS CURATOR - Web UI")
-    print("Open http://localhost:5000 in your browser")
+    print(f"Open http://localhost:{port} in your browser")
     print("="*60 + "\n")
-    app.run(debug=True, port=5000)
+    app.run(debug=False, host='0.0.0.0', port=port)
+
