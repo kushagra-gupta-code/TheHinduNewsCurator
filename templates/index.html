@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>The Hindu News Curator</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <div class="header-top">
+                <h1>🗞️ The Hindu News Curator</h1>
+                <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle theme">
+                    <span class="theme-icon">🌙</span>
+                </button>
+            </div>
+            <p class="subtitle">AI-powered curation of high-impact articles</p>
+        </header>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="edition">Edition:</label>
+                <select id="edition">
+                    <option value="th_delhi">Delhi</option>
+                    <option value="th_chennai">Chennai</option>
+                    <option value="th_bangalore">Bengaluru</option>
+                    <option value="th_hyderabad">Hyderabad</option>
+                    <option value="th_mumbai">Mumbai</option>
+                    <option value="th_kolkata">Kolkata</option>
+                    <option value="th_kochi">Kochi</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label for="date">Date:</label>
+                <input type="date" id="date" value="">
+            </div>
+            <div class="control-group">
+                <label for="topCount">Top:</label>
+                <select id="topCount">
+                    <option value="5">5</option>
+                    <option value="10">10</option>
+                    <option value="15">15</option>
+                    <option value="20" selected>20</option>
+                    <option value="30">30</option>
+                    <option value="50">50</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button id="scrapeBtn" class="btn btn-primary" onclick="scrapeArticles()">
+                📰 Scrape
+            </button>
+            <button id="analyzeBtn" class="btn btn-secondary" onclick="analyzeArticles()" disabled>
+                🤖 Analyze
+            </button>
+            <button id="openSmryBtn" class="btn btn-accent" onclick="openSmry()" disabled>
+                🌐 Open All
+            </button>
+        </div>
+
+        <div class="status-bar">
+            <span id="status">Ready to scrape</span>
+            <span id="stats"></span>
+        </div>
+
+        <div class="results" id="results">
+            <table id="articlesTable">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Title</th>
+                        <th class="hide-mobile">Section</th>
+                        <th>Score</th>
+                    </tr>
+                </thead>
+                <tbody id="articlesBody">
+                    <tr class="empty-row">
+                        <td colspan="4">Click "Scrape" to begin</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Article Preview Modal -->
+    <div id="previewModal" class="modal" onclick="closePreview(event)">
+        <div class="modal-content" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3 id="previewTitle">Article Preview</h3>
+                <button class="toggle-scores-btn" onclick="toggleScores()" title="Toggle scores">📊</button>
+                <button class="toggle-chat-btn" id="toggleChatBtn" onclick="toggleChat()"
+                    title="Chat about article">💬</button>
+                <button class="close-btn" onclick="closePreview()">&times;</button>
+            </div>
+            <div class="score-breakdown" id="scoreBreakdown"></div>
+
+            <div class="modal-body">
+                <div class="iframe-container">
+                    <div class="iframe-overlay" id="iframeOverlay" onclick="onOverlayClick()"></div>
+                    <iframe id="previewFrame" src="about:blank"></iframe>
+                </div>
+
+                <!-- Chat Panel -->
+                <div class="chat-panel" id="chatPanel">
+                    <div class="chat-header">
+                        <span>💬 Ask about this article</span>
+                        <span class="chat-badge">🔍 Google Search</span>
+                    </div>
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="chat-welcome">
+                            Ask any question about this article. I can also search the web for related current events!
+                        </div>
+                    </div>
+                    <div class="chat-input-container">
+                        <input type="text" id="chatInput" placeholder="Ask a question..."
+                            onkeypress="handleChatKeypress(event)">
+                        <button class="chat-send-btn" onclick="sendMessage()" id="chatSendBtn">➤</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Theme management - default to dark
+        function initTheme() {
+            const saved = localStorage.getItem('theme');
+            if (saved) {
+                setTheme(saved);
+            } else {
+                // Default to dark mode
+                setTheme('dark');
+            }
+        }
+
+        function setTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            const icon = document.querySelector('.theme-icon');
+            icon.textContent = theme === 'light' ? '☀️' : '🌙';
+            localStorage.setItem('theme', theme);
+        }
+
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme');
+            setTheme(current === 'light' ? 'dark' : 'light');
+        }
+
+        initTheme();
+        document.getElementById('date').valueAsDate = new Date();
+
+        // Chat state
+        let chatHistory = [];
+        let currentArticle = null;
+        let chatOpen = false;
+
+        async function scrapeArticles() {
+            const btn = document.getElementById('scrapeBtn');
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            const status = document.getElementById('status');
+
+            btn.disabled = true;
+            btn.textContent = '⏳...';
+            status.textContent = 'Scraping articles...';
+
+            const edition = document.getElementById('edition').value;
+            const date = document.getElementById('date').value;
+
+            try {
+                const response = await fetch('/scrape', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ edition, date })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    status.textContent = `✅ Scraped ${data.count} articles`;
+                    document.getElementById('stats').textContent = `${data.sections.length} sections`;
+                    analyzeBtn.disabled = false;
+                } else {
+                    status.textContent = `❌ ${data.error}`;
+                }
+            } catch (error) {
+                status.textContent = `❌ ${error.message}`;
+            }
+
+            btn.disabled = false;
+            btn.textContent = '📰 Scrape';
+        }
+
+        async function analyzeArticles() {
+            const btn = document.getElementById('analyzeBtn');
+            const openBtn = document.getElementById('openSmryBtn');
+            const status = document.getElementById('status');
+            const topCount = parseInt(document.getElementById('topCount').value);
+
+            btn.disabled = true;
+            btn.textContent = '🤔 Thinking...';
+            status.textContent = '🤔 Preparing AI analysis...';
+            
+            // Start SSE for live progress updates
+            const eventSource = new EventSource('/analyze-stream');
+            
+            eventSource.onmessage = function(event) {
+                const [stage, message] = event.data.split('|');
+                if (stage !== 'heartbeat') {
+                    status.textContent = message;
+                    
+                    if (stage === 'thinking') {
+                        btn.textContent = '🤔 Thinking...';
+                    } else if (stage === 'progress') {
+                        btn.textContent = '⚡ Processing...';
+                    } else if (stage === 'complete') {
+                        eventSource.close();
+                    }
+                }
+            };
+            
+            eventSource.onerror = function() {
+                eventSource.close();
+            };
+
+            try {
+                const response = await fetch('/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ top_count: topCount })
+                });
+
+                const data = await response.json();
+                eventSource.close();
+
+                if (data.success) {
+                    status.textContent = '✅ Top ' + data.count + ' curated';
+                    openBtn.disabled = false;
+                    await loadResults();
+                } else {
+                    status.textContent = '❌ ' + data.error;
+                }
+            } catch (error) {
+                eventSource.close();
+                status.textContent = '❌ ' + error.message;
+            }
+
+            btn.disabled = false;
+            btn.textContent = '🤖 Analyze';
+        }
+
+        let articlesData = [];
+
+        async function loadResults() {
+            try {
+                const response = await fetch('/results');
+                const data = await response.json();
+                articlesData = data.articles;
+
+                const tbody = document.getElementById('articlesBody');
+                tbody.innerHTML = '';
+
+                if (data.articles.length === 0) {
+                    tbody.innerHTML = '<tr class="empty-row"><td colspan="4">No articles yet</td></tr>';
+                    return;
+                }
+
+                document.getElementById('stats').textContent = `${data.total_scraped} total`;
+
+                data.articles.forEach((article, index) => {
+                    const row = document.createElement('tr');
+                    row.className = 'article-row';
+                    row.onclick = () => openPreview(index);
+                    row.innerHTML = `
+                        <td class="rank">${article.rank}</td>
+                        <td class="title">
+                            <span class="article-title">${article.title}</span>
+                            <span class="reasoning">${article.reasoning || ''}</span>
+                        </td>
+                        <td class="hide-mobile"><span class="section-badge ${article.section.toLowerCase().replace('th_', '')}">${article.section.replace('TH_', '')}</span></td>
+                        <td class="score-cell">
+                            <span class="score">${article.score}/20</span>
+                            <div class="score-mini">
+                                <span title="Impact Scope">📊${article.scores.impact_scope}</span>
+                                <span title="Governance">🏛️${article.scores.governance}</span>
+                                <span title="Accountability">⚖️${article.scores.accountability}</span>
+                                <span title="Geopolitical">🌍${article.scores.geopolitical}</span>
+                                <span title="Anti-Bubble">💡${article.scores.anti_bubble}</span>
+                                <span title="Newsworthiness">📰${article.scores.newsworthiness}</span>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            } catch (error) {
+                console.error('Error loading results:', error);
+            }
+        }
+
+        function openPreview(index) {
+            const article = articlesData[index];
+            currentArticle = article;
+            const modal = document.getElementById('previewModal');
+            const iframe = document.getElementById('previewFrame');
+            const title = document.getElementById('previewTitle');
+            const breakdown = document.getElementById('scoreBreakdown');
+            const overlay = document.getElementById('iframeOverlay');
+
+            title.textContent = article.title;
+            overlay.style.display = 'block';
+            breakdown.classList.remove('hidden');
+
+            // Reset chat for new article
+            chatHistory = [];
+            chatOpen = false;
+            document.getElementById('chatPanel').classList.remove('active');
+            document.getElementById('chatMessages').innerHTML = `
+                <div class="chat-welcome">
+                    Ask any question about this article. I can also search the web for related current events!
+                </div>
+            `;
+
+            breakdown.innerHTML = `
+                <div class="breakdown-grid">
+                    <div class="breakdown-item"><span>📊</span><span>${article.scores.impact_scope}/10</span></div>
+                    <div class="breakdown-item"><span>🏛️</span><span>${article.scores.governance}/2</span></div>
+                    <div class="breakdown-item"><span>⚖️</span><span>${article.scores.accountability}/2</span></div>
+                    <div class="breakdown-item"><span>🌍</span><span>${article.scores.geopolitical}/2</span></div>
+                    <div class="breakdown-item"><span>💡</span><span>${article.scores.anti_bubble}/2</span></div>
+                    <div class="breakdown-item"><span>📰</span><span>${article.scores.newsworthiness}/2</span></div>
+                </div>
+                <div class="total-score">Total: <strong>${article.score}/20</strong> — ${article.reasoning || ''}</div>
+            `;
+
+            iframe.src = article.smry_url;
+            modal.classList.add('active');
+            
+            // Prevent body scroll and focus modal for scroll control
+            document.body.style.overflow = 'hidden';
+            const modalContent = document.querySelector('.modal-content');
+            modalContent.setAttribute('tabindex', '-1');
+            modalContent.focus();
+        }
+
+        function onOverlayClick() {
+            document.getElementById('scoreBreakdown').classList.add('hidden');
+            document.getElementById('iframeOverlay').style.display = 'none';
+        }
+
+        function toggleScores() {
+            document.getElementById('scoreBreakdown').classList.toggle('hidden');
+        }
+
+        function toggleChat() {
+            chatOpen = !chatOpen;
+            const panel = document.getElementById('chatPanel');
+            panel.classList.toggle('active', chatOpen);
+            if (chatOpen) {
+                document.getElementById('chatInput').focus();
+            }
+        }
+
+        function handleChatKeypress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            if (!message || !currentArticle) return;
+
+            input.value = '';
+            const messagesDiv = document.getElementById('chatMessages');
+            const sendBtn = document.getElementById('chatSendBtn');
+
+            // Add user message
+            messagesDiv.innerHTML += `<div class="chat-message user">${escapeHtml(message)}</div>`;
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+            // Add loading indicator
+            const loadingId = 'loading-' + Date.now();
+            messagesDiv.innerHTML += `<div class="chat-message ai loading" id="${loadingId}">
+                <span class="loading-dots">Thinking<span>.</span><span>.</span><span>.</span></span>
+            </div>`;
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+            sendBtn.disabled = true;
+            input.disabled = true;
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        article_title: currentArticle.title,
+                        article_url: currentArticle.url,
+                        message: message,
+                        history: chatHistory
+                    })
+                });
+
+                const data = await response.json();
+
+                // Remove loading indicator
+                document.getElementById(loadingId)?.remove();
+
+                if (data.success) {
+                    // Add to history
+                    chatHistory.push({ role: 'user', content: message });
+                    chatHistory.push({ role: 'assistant', content: data.response });
+
+                    // Add AI response
+                    messagesDiv.innerHTML += `<div class="chat-message ai">${formatMessage(data.response)}</div>`;
+                } else {
+                    messagesDiv.innerHTML += `<div class="chat-message ai error">Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                document.getElementById(loadingId)?.remove();
+                messagesDiv.innerHTML += `<div class="chat-message ai error">Error: ${error.message}</div>`;
+            }
+
+            sendBtn.disabled = false;
+            input.disabled = false;
+            input.focus();
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function formatMessage(text) {
+            // Simple markdown-like formatting
+            return escapeHtml(text)
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/\n/g, '<br>');
+        }
+
+        function closePreview(event) {
+            if (event && event.target !== document.getElementById('previewModal')) return;
+            const modal = document.getElementById('previewModal');
+            const iframe = document.getElementById('previewFrame');
+            modal.classList.remove('active');
+            document.body.style.overflow = '';  // Restore body scroll
+            iframe.src = 'about:blank';
+            chatOpen = false;
+        }
+
+        async function openSmry() {
+            const status = document.getElementById('status');
+            status.textContent = 'Opening tabs...';
+
+            try {
+                const response = await fetch('/open-smry', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    status.textContent = `✅ Opened ${data.count} tabs`;
+                } else {
+                    status.textContent = `❌ ${data.error}`;
+                }
+            } catch (error) {
+                status.textContent = `❌ ${error.message}`;
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closePreview();
+        });
+    </script>
+</body>
+
+</html>
