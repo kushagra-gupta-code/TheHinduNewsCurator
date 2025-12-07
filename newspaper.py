@@ -12,6 +12,8 @@ import time
 from datetime import datetime
 import sys
 import os
+import concurrent.futures
+import threading
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -118,122 +120,163 @@ class HinduNewsCurator:
         except json.JSONDecodeError as e:
             print(f"❌ Error parsing article data: {e}")
     
-    def analyze_all_articles(self):
-        """Analyze all articles using Gemini API in batches"""
-        if not self.articles:
-            print("No articles to analyze.")
-            return
+    def _process_batch(self, batch_args):
+        """Helper method to process a single batch of articles"""
+        batch_id, articles, model, batch_total, total_batches = batch_args
+        
+        # Prepare content
+        articles_text = ""
+        batch_start_id = batch_id * 45  # approximate ID based on batch index
+        for i, article in enumerate(articles):
+            global_id = batch_start_id + i
+            teaser_snippet = article.teaser[:150] if article.teaser else "No description"
+            articles_text += f"ID: {global_id}\nTitle: {article.title}\nSection: {article.section}\nSummary: {teaser_snippet}\n---\n"
 
-        BATCH_SIZE = 70  # Process 70 articles at a time to avoid response truncation
-        total = len(self.articles)
-        total_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
-        print(f"\n🤖 Analyzing {total} articles with Gemini API (in batches of {BATCH_SIZE})...\n")
-        
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        all_results = {}
-        
-        # Tracking variables for enhanced logging
-        cumulative_success = 0
-        batch_times = []
-        
-        for batch_start in range(0, total, BATCH_SIZE):
-            batch_num = batch_start // BATCH_SIZE + 1
-            batch_end = min(batch_start + BATCH_SIZE, total)
-            batch_size_actual = batch_end - batch_start
-            batch_articles = self.articles[batch_start:batch_end]
-            
-            print(f"📦 Batch {batch_num}/{total_batches}: Processing articles {batch_start+1}-{batch_end} of {total}...")
-            
-            # Start timing
-            batch_start_time = time.time()
-            
-            # Prepare the articles for this batch
-            articles_text = ""
-            for i, article in enumerate(batch_articles):
-                global_id = batch_start + i
-                teaser_snippet = article.teaser[:150] if article.teaser else "No description"
-                articles_text += f"ID: {global_id}\nTitle: {article.title}\nSection: {article.section}\nSummary: {teaser_snippet}\n---\n"
-
-            prompt = f"""Analyze these news articles for impact value. Return ONLY valid JSON.
+        prompt = f"""Analyze these news articles for impact value. Return ONLY valid JSON.
 
 ARTICLES:
 {articles_text}
 
-For each article, evaluate:
-- impact_scope (0-10): National=10, Regional=7-8, Sectoral=5-7, Limited=2-4
-- governance (0-2): Policy/governance impact
-- accountability (0-2): Holds institutions accountable
-- geopolitical (0-2): Global/regional significance
-- anti_bubble (0-2): Expands perspective
-- newsworthiness (0-2): Breaking/developing news
+For each article, evaluate these 6 metrics (scores):
+1. impact_scope (0-10)
+2. governance (0-2)
+3. accountability (0-2)
+4. geopolitical (0-2)
+5. anti_bubble (0-2)
+6. newsworthiness (0-2)
 
-Return JSON: {{"results": [{{"id": <int>, "impact_scope": <int>, "governance": <int>, "accountability": <int>, "geopolitical": <int>, "anti_bubble": <int>, "newsworthiness": <int>, "total_score": <sum>, "reasoning": "<short>"}}, ...]}}"""
+Return JSON with MINIFIED keys to save space:
+{{"results": [{{"id": <int>, "s": [<scope>, <gov>, <acc>, <geo>, <anti>, <news>], "r": "<short_reasoning>"}}, ...]}}
+"s" is the list of 6 scores in order. "r" is reasoning."""
 
-            batch_success = 0
-            batch_scores = []
+        try:
+            start_time = time.time()
+            response = model.generate_content(prompt)
+            json_str = response.text.strip()
             
-            try:
-                response = model.generate_content(prompt)
-                json_str = response.text.strip()
-                
-                if '```json' in json_str:
-                    json_str = json_str.split('```json')[1].split('```')[0]
-                elif '```' in json_str:
-                    json_str = json_str.split('```')[1].split('```')[0]
-                
-                data = json.loads(json_str.strip())
-                
-                # Handle both formats
-                if isinstance(data, list):
-                    results = data
-                else:
-                    results = data.get('results', [])
-                
-                # Add to global results and track scores
-                for item in results:
-                    try:
-                        article_id = int(item['id'])
-                        all_results[article_id] = item
-                        batch_success += 1
-                        batch_scores.append(item.get('total_score', 0))
-                    except (ValueError, TypeError):
-                        pass
-                        
-            except Exception as e:
-                print(f"   ⚠️ Batch error: {e}")
+            if '```json' in json_str:
+                json_str = json_str.split('```json')[1].split('```')[0]
+            elif '```' in json_str:
+                json_str = json_str.split('```')[1].split('```')[0]
             
-            # End timing
-            batch_elapsed = time.time() - batch_start_time
-            batch_times.append(batch_elapsed)
+            data = json.loads(json_str.strip())
             
-            # Update cumulative success
-            cumulative_success += batch_success
-            
-            # Calculate batch average score
-            batch_avg_score = sum(batch_scores) / len(batch_scores) if batch_scores else 0
-            
-            # Calculate ETA based on average batch time
-            avg_batch_time = sum(batch_times) / len(batch_times)
-            remaining_batches = total_batches - batch_num
-            eta_seconds = avg_batch_time * remaining_batches
-            
-            # Progress percentage
-            progress_pct = (batch_end / total) * 100
-            
-            # Print enhanced batch summary
-            print(f"   ✅ {batch_success}/{batch_size_actual} analyzed in {batch_elapsed:.1f}s | Avg score: {batch_avg_score:.1f}/20")
-            print(f"   📈 Progress: {cumulative_success}/{total} ({progress_pct:.0f}%)", end="")
-            if remaining_batches > 0:
-                print(f" | ⏳ ETA: ~{eta_seconds:.1f}s")
+            if isinstance(data, list):
+                raw_results = data
             else:
-                print()  # Final batch, no ETA needed
-            print()  # Blank line between batches
+                raw_results = data.get('results', [])
+            
+            # Expand minified results back to full format
+            results = []
+            for item in raw_results:
+                scores = item.get('s', [0,0,0,0,0,0])
+                if len(scores) < 6:
+                    scores = list(scores) + [0] * (6 - len(scores))
+                    
+                results.append({
+                    "id": item.get('id'),
+                    "impact_scope": scores[0],
+                    "governance": scores[1],
+                    "accountability": scores[2],
+                    "geopolitical": scores[3],
+                    "anti_bubble": scores[4],
+                    "newsworthiness": scores[5],
+                    "total_score": sum(scores),
+                    "reasoning": item.get('r', '')
+                })
                 
-            time.sleep(1)  # Small delay between batches
+            elapsed = time.time() - start_time
+            return {
+                "success": True, 
+                "results": results, 
+                "batch_id": batch_id, 
+                "elapsed": elapsed,
+                "count": len(results)
+            }
+            
+        except Exception as e:
+            return {
+                "success": False, 
+                "error": str(e), 
+                "batch_id": batch_id, 
+                "elapsed": 0
+            }
+
+    def analyze_all_articles(self):
+        """Analyze all articles using Gemini API in parallel batches"""
+        if not self.articles:
+            print("No articles to analyze.")
+            return
+
+        BATCH_SIZE = 45
+        total = len(self.articles)
+        total_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
         
-        # Map all results to articles
+        # Max workers to avoid hitting rate limits too hard
+        MAX_WORKERS = 5
+        
+        print(f"\n🤖 Analyzing {total} articles with Gemini API (Parallel Batches: {total_batches})...\n")
+        
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        all_results = {}
+        
+        # Prepare batches
+        batches = []
+        for i in range(total_batches):
+            start = i * BATCH_SIZE
+            end = min(start + BATCH_SIZE, total)
+            batch_articles = self.articles[start:end]
+            batches.append((i, batch_articles, model, BATCH_SIZE, total_batches))
+
+        # Thread-safe counters
+        completed_batches = 0
+        total_articles_analyzed = 0
+        total_time_sum = 0
+        start_time_global = time.time()
+        
+        print(f"🚀 Starting {total_batches} batches with {MAX_WORKERS} threads...\n")
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            future_to_batch = {executor.submit(self._process_batch, batch): batch for batch in batches}
+            
+            for future in concurrent.futures.as_completed(future_to_batch):
+                result = future.result()
+                batch_id = result['batch_id']
+                
+                if result['success']:
+                    batch_results = result['results']
+                    count = result['count']
+                    elapsed = result['elapsed']
+                    
+                    # Store results (map by article index)
+                    # Note: We need to map back to original article index properly
+                    # The batch used a global_id which was just an index in the batch loop
+                    # Real index = batch_id * BATCH_SIZE + local_index
+                    # But the LLM returns IDs we sent it.
+                    
+                    for item in batch_results:
+                        try:
+                            # We sent global_id = batch_start + i
+                            article_id = int(item.get('id', -1))
+                            if article_id >= 0:
+                                all_results[article_id] = item
+                        except (ValueError, TypeError):
+                            pass
+
+                    completed_batches += 1
+                    total_articles_analyzed += count
+                    total_time_sum += elapsed
+                    
+                    # Log progress
+                    print(f"   ✅ Batch {batch_id+1}/{total_batches} finished: {count} articles in {elapsed:.1f}s")
+                    
+                else:
+                    print(f"   ❌ Batch {batch_id+1}/{total_batches} failed: {result['error']}")
+
+        # Map results back to articles
         success_count = 0
         total_score_sum = 0
+        
         for i, article in enumerate(self.articles):
             if i in all_results:
                 analysis = all_results[i]
@@ -245,13 +288,14 @@ Return JSON: {{"results": [{{"id": <int>, "impact_scope": <int>, "governance": <
                 article.impact_score = 0
         
         # Final summary
+        total_elapsed = time.time() - start_time_global
         overall_avg = total_score_sum / success_count if success_count > 0 else 0
-        total_time = sum(batch_times)
+        
         print(f"{'='*60}")
         print(f"✅ Analysis Complete!")
         print(f"   📊 Articles: {success_count}/{total} successfully analyzed")
         print(f"   📈 Overall Avg Score: {overall_avg:.1f}/20")
-        print(f"   ⏱️  Total Time: {total_time:.1f}s ({total_time/success_count:.2f}s per article)")
+        print(f"   ⏱️  Total Wall Time: {total_elapsed:.1f}s")
         print(f"{'='*60}")
     
     def curate_top_n(self, top_count=20):
@@ -314,7 +358,8 @@ Return JSON: {{"results": [{{"id": <int>, "impact_scope": <int>, "governance": <
         print(f"\n🌐 Opening {len(self.top_20)} articles in browser via smry.ai...\n")
         
         for i, article in enumerate(self.top_20, 1):
-            smry_url = f"https://smry.ai/{article.url}"
+            clean_url = article.url.replace("https://", "").replace("http://", "")
+            smry_url = f"https://smry.ai/{clean_url}"
             print(f"[{i}/20] Opening: {article.title[:50]}...")
             
             try:
@@ -414,7 +459,7 @@ def main():
         curator.analyze_all_articles()
         
         # Step 4: Curate top 20 with anti-bubble criteria
-        curator.curate_top_20()
+        curator.curate_top_n(20)
         
         # Step 5: Generate report
         curator.generate_report()

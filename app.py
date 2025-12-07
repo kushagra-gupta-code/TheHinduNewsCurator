@@ -128,7 +128,7 @@ def results():
             "score": article.impact_score,
             "scores": scores,
             "url": article.url,
-            "smry_url": f"https://smry.ai/{article.url}",
+            "smry_url": f"https://smry.ai/{article.url.replace('https://', '').replace('http://', '')}",
             "reasoning": reasoning
         })
     
