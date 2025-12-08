@@ -170,12 +170,14 @@ class HybridLLMProvider:
         """Generate content with automatic fallback"""
         # Try Google first
         try:
+            print("🤖 Using Google Gemini for article analysis")
             return self.google_provider.generate_content(prompt, **kwargs)
         except Exception as e:
             if self.google_provider.is_rate_limit_error(e) and self.openrouter_provider:
                 # Google rate limit - fallback to OpenRouter
                 print("🔄 Google rate limit hit, falling back to OpenRouter...")
                 try:
+                    print("🤖 Using OpenRouter for article analysis")
                     return self.openrouter_provider.generate_content(prompt, **kwargs)
                 except Exception as e2:
                     # OpenRouter failed, raise the OpenRouter error

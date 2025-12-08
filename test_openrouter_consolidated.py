@@ -16,9 +16,9 @@ def test_openrouter_api():
     """Test OpenRouter API directly"""
     print("=== Testing OpenRouter API ===")
 
-    OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+    OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY_TEST")
     if not OPENROUTER_API_KEY:
-        print("OPENROUTER_API_KEY not configured")
+        print("OPENROUTER_API_KEY_TEST not configured")
         return False
 
     try:
@@ -48,9 +48,9 @@ def test_google_api():
     """Test Google Gemini API"""
     print("\n=== Testing Google Gemini API ===")
 
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY_TEST")
     if not GEMINI_API_KEY:
-        print("ERROR GEMINI_API_KEY not configured")
+        print("ERROR GEMINI_API_KEY_TEST not configured")
         return False
 
     try:
@@ -140,8 +140,8 @@ def main():
     print("=" * 60)
 
     # Check environment
-    gemini_key = bool(os.getenv("GEMINI_API_KEY"))
-    openrouter_key = bool(os.getenv("OPENROUTER_API_KEY"))
+    gemini_key = bool(os.getenv("GEMINI_API_KEY_TEST"))
+    openrouter_key = bool(os.getenv("OPENROUTER_API_KEY_TEST"))
     fallback_enabled = os.getenv("USE_OPENROUTER_FALLBACK", "true")
 
     print("Environment Check:")

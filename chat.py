@@ -155,12 +155,14 @@ class HybridChatProvider:
         """Generate content with automatic fallback"""
         # Try Google first
         try:
+            print("🤖 Using Google Gemini for chat")
             return self.google_provider.generate_content(messages, **kwargs)
         except Exception as e:
             if self.google_provider.is_rate_limit_error(e) and self.openrouter_provider:
                 # Google rate limit - fallback to OpenRouter
                 print("🔄 Google chat rate limit hit, falling back to OpenRouter...")
                 try:
+                    print("🤖 Using OpenRouter for chat")
                     return self.openrouter_provider.generate_content(messages, **kwargs)
                 except Exception as e2:
                     # OpenRouter failed, raise the original Google error or the OpenRouter error

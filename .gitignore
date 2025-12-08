@@ -25,3 +25,6 @@ Thumbs.db
 # Environment variables (if you move API key to .env)
 .env
 .env.local
+
+# opencode
+.opencode
