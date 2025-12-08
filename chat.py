@@ -10,15 +10,22 @@ from google.genai import types
 # Load environment variables from .env file
 load_dotenv()
 
-# Initialize Google client
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY not found. Please set it in .env file.")
+# Import configuration
+from config import (
+    GEMINI_API_KEY,
+    OPENROUTER_API_KEY,
+    GEMINI_MODEL,
+    OPENROUTER_MODEL,
+    CHAT_TEMPERATURE,
+    CHAT_MAX_TOKENS,
+    USE_OPENROUTER_FALLBACK,
+    validate_config,
+    ConfigError,
+)
 
-# Initialize OpenRouter
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "kwaipilot/kat-coder-pro:free")
-USE_OPENROUTER_FALLBACK = os.getenv("USE_OPENROUTER_FALLBACK", "true").lower() == "true"
+# Initialize Google client
+if not GEMINI_API_KEY:
+    raise ConfigError("GEMINI_API_KEY not found. Please set it in .env file.")
 
 # Import OpenRouter if available
 try:
@@ -35,7 +42,7 @@ class GoogleChatProvider:
 
     def __init__(self):
         if not GEMINI_API_KEY:
-            raise ValueError("GEMINI_API_KEY not found.")
+            raise ConfigError("GEMINI_API_KEY not found.")
         self.client = genai.Client(api_key=GEMINI_API_KEY)
 
     def generate_content(self, messages: list, **kwargs) -> str:
@@ -84,7 +91,7 @@ class OpenRouterChatProvider:
         if not OPENROUTER_AVAILABLE:
             raise ImportError("OpenRouter not available")
         if not OPENROUTER_API_KEY:
-            raise ValueError("OPENROUTER_API_KEY not found.")
+            raise ConfigError("OPENROUTER_API_KEY not found.")
 
         self.client = OpenRouter(api_key=OPENROUTER_API_KEY)
         self.model = OPENROUTER_MODEL
@@ -113,8 +120,8 @@ class OpenRouterChatProvider:
             response = self.client.chat.send(
                 model=self.model,
                 messages=openrouter_messages,
-                temperature=0.7,
-                max_tokens=4000,
+                temperature=CHAT_TEMPERATURE,
+                max_tokens=CHAT_MAX_TOKENS,
             )
 
             return response.choices[0].message.content

@@ -15,10 +15,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from newspaper import (
     HinduNewsCurator,
     NewsArticle,
+)
+from config import (
     BATCH_SIZE,
     MAX_CONCURRENT,
     MAX_OUTPUT_TOKENS,
-    MODEL_NAME,
+    GEMINI_MODEL,
     USE_ASYNC_OPTIMIZATION,
 )
 
@@ -96,7 +98,7 @@ class IntegrationTester:
             print(f"  Batch Size: {BATCH_SIZE}")
             print(f"  Max Concurrent: {MAX_CONCURRENT}")
             print(f"  Max Output Tokens: {MAX_OUTPUT_TOKENS}")
-            print(f"  Model Name: {MODEL_NAME}")
+            print(f"  Model Name: {GEMINI_MODEL}")
             print(f"  Async Optimization: {USE_ASYNC_OPTIMIZATION}")
             return True
         except Exception as e:

@@ -24,26 +24,30 @@ load_dotenv()
 if sys.platform.startswith("win"):
     sys.stdout.reconfigure(encoding="utf-8")
 
+# Import configuration
+from config import (
+    GEMINI_API_KEY,
+    OPENROUTER_API_KEY,
+    GEMINI_MODEL,
+    OPENROUTER_MODEL,
+    BATCH_SIZE,
+    MAX_CONCURRENT,
+    MAX_OUTPUT_TOKENS,
+    RATE_LIMIT_RPM,
+    LEGACY_BATCH_SIZE,
+    MAX_WORKERS,
+    DEFAULT_EDITION,
+    DEFAULT_TOP_COUNT,
+    USE_ASYNC_OPTIMIZATION,
+    USE_OPENROUTER_FALLBACK,
+    validate_config,
+    ConfigError,
+)
+
 # Configure Gemini API
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY not found. Please set it in .env file.")
+    raise ConfigError("GEMINI_API_KEY not found. Please set it in .env file.")
 genai.configure(api_key=GEMINI_API_KEY)
-
-# Configure OpenRouter API
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "kwaipilot/kat-coder-pro:free")
-USE_OPENROUTER_FALLBACK = os.getenv("USE_OPENROUTER_FALLBACK", "true").lower() == "true"
-
-# Optimized configuration constants for async implementation
-BATCH_SIZE = 25  # Optimized for 7 concurrent calls
-MAX_CONCURRENT = 5  # Increased from 5 threads
-MAX_OUTPUT_TOKENS = 32768  # Increased from 2000 (16x more detailed)
-RATE_LIMIT_RPM = 10  # Free tier limit
-MODEL_NAME = "gemini-2.5-flash-lite"  # Model name constant
-
-# Feature flag for rollback capability
-USE_ASYNC_OPTIMIZATION = os.getenv("USE_ASYNC_OPTIMIZATION", "true").lower() == "true"
 
 # Import OpenRouter if available
 try:
@@ -70,7 +74,7 @@ class GoogleProvider(LLMProvider):
 
     def __init__(self):
         self.model = genai.GenerativeModel(
-            MODEL_NAME,
+            GEMINI_MODEL,
             generation_config={
                 "temperature": 0.3,
                 "max_output_tokens": MAX_OUTPUT_TOKENS,
@@ -113,7 +117,7 @@ class OpenRouterProvider(LLMProvider):
         if not OPENROUTER_AVAILABLE:
             raise ImportError("OpenRouter not available")
         if not OPENROUTER_API_KEY:
-            raise ValueError(
+            raise ConfigError(
                 "OPENROUTER_API_KEY not found. Please set it in .env file."
             )
 
@@ -211,10 +215,15 @@ class NewsArticle:
 
 
 class HinduNewsCurator:
-    def __init__(self, date=None, edition="th_delhi"):
+    def __init__(self, date=None, edition=None):
+        # Validate configuration
+        validate_config()
+
         self.date = date or datetime.now().strftime("%Y-%m-%d")
-        self.edition = edition
-        self.base_url = f"https://www.thehindu.com/todays-paper/{self.date}/{edition}/"
+        self.edition = edition or DEFAULT_EDITION
+        self.base_url = (
+            f"https://www.thehindu.com/todays-paper/{self.date}/{self.edition}/"
+        )
         self.articles = []
         self.top_20 = []
         self.seen_urls = set()
@@ -309,7 +318,7 @@ class HinduNewsCurator:
 
         # Prepare content
         articles_text = ""
-        batch_start_id = batch_id * batch_size  # Use dynamic batch size
+        batch_start_id = batch_id * BATCH_SIZE  # Use dynamic batch size
         for i, article in enumerate(articles):
             global_id = batch_start_id + i
             teaser_snippet = (
@@ -397,7 +406,7 @@ Return JSON with MINIFIED keys to save space:
 
         # Prepare content
         articles_text = ""
-        batch_start_id = batch_id * batch_size  # Use dynamic batch size
+        batch_start_id = batch_id * BATCH_SIZE  # Use dynamic batch size
         for i, article in enumerate(articles):
             global_id = batch_start_id + i
             teaser_snippet = (
@@ -489,7 +498,7 @@ Return JSON with MINIFIED keys to save space:
         total_batches = (total + LEGACY_BATCH_SIZE - 1) // LEGACY_BATCH_SIZE
 
         # Max workers to avoid hitting rate limits too hard
-        MAX_WORKERS = 5
+        # Using MAX_WORKERS from config
 
         print(
             f"\n🤖 Analyzing {total} articles with Legacy Implementation (Parallel Batches: {total_batches})...\n"
@@ -853,7 +862,7 @@ def main():
     print("=" * 80 + "\n")
 
     # Initialize curator
-    curator = HinduNewsCurator(edition="th_delhi")
+    curator = HinduNewsCurator()  # Uses DEFAULT_EDITION from config
 
     # Step 1: Scrape all sections
     curator.scrape_all_sections()
@@ -881,7 +890,7 @@ def main():
         curator.analyze_all_articles()
 
         # Step 4: Curate top 20 with anti-bubble criteria
-        curator.curate_top_n(20)
+        curator.curate_top_n(DEFAULT_TOP_COUNT)
 
         # Step 5: Generate report
         curator.generate_report()

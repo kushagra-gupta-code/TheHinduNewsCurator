@@ -17,6 +17,21 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if sys.platform.startswith("win"):
     sys.stdout.reconfigure(encoding="utf-8")
 
+# Import configuration
+from config import (
+    GEMINI_API_KEY,
+    OPENROUTER_API_KEY,
+    GEMINI_MODEL,
+    OPENROUTER_MODEL,
+    PORT,
+    DEFAULT_EDITION,
+    DEFAULT_TOP_COUNT,
+    USE_OPENROUTER_FALLBACK,
+    validate_config,
+    get_config_summary,
+    ConfigError,
+)
+
 from newspaper import HinduNewsCurator
 from chat import chat_with_article
 import google.generativeai as genai
@@ -31,16 +46,10 @@ app = Flask(__name__)
 curator = None
 status = {"message": "Ready to scrape", "step": "idle"}
 
-# Configure APIs from environment variables
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# Configure APIs
 if not GEMINI_API_KEY:
-    raise ValueError("GEMINI_API_KEY not found. Please set it in .env file.")
+    raise ConfigError("GEMINI_API_KEY not found. Please set it in .env file.")
 genai.configure(api_key=GEMINI_API_KEY)
-
-# Configure OpenRouter
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "kwaipilot/kat-coder-pro:free")
-USE_OPENROUTER_FALLBACK = os.getenv("USE_OPENROUTER_FALLBACK", "true").lower() == "true"
 
 # Check OpenRouter availability
 try:
@@ -63,7 +72,7 @@ def scrape():
     """Scrape articles from The Hindu"""
     global curator, status
 
-    edition = request.json.get("edition", "th_delhi")
+    edition = request.json.get("edition", DEFAULT_EDITION)
     date = request.json.get("date", None)
 
     try:
@@ -98,7 +107,11 @@ def analyze():
             {"success": False, "error": "No articles to analyze. Scrape first."}
         ), 400
 
-    top_count = request.json.get("top_count", 20) if request.json else 20
+    top_count = (
+        request.json.get("top_count", DEFAULT_TOP_COUNT)
+        if request.json
+        else DEFAULT_TOP_COUNT
+    )
 
     try:
         status = {"message": "Analyzing with AI...", "step": "analyzing"}
@@ -288,9 +301,15 @@ def chat():
 
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 5000))
+    try:
+        validate_config()
+        print(f"✅ Configuration valid: {get_config_summary()}")
+    except ConfigError as e:
+        print(f"❌ Configuration error: {e}")
+        sys.exit(1)
+
     print("\n" + "=" * 60)
     print("🗞️  THE HINDU NEWS CURATOR - Web UI")
-    print(f"Open http://localhost:{port} in your browser")
+    print(f"Open http://localhost:{PORT} in your browser")
     print("=" * 60 + "\n")
-    app.run(debug=False, host="0.0.0.0", port=port)
+    app.run(debug=False, host="0.0.0.0", port=PORT)
