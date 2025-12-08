@@ -113,7 +113,7 @@ def test_hybrid_provider():
     print("\n=== Testing HybridLLMProvider ===")
 
     try:
-        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         from newspaper import HybridLLMProvider
 
         provider = HybridLLMProvider()
