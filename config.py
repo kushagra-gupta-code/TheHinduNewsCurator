@@ -17,7 +17,7 @@ GEMINI_MODEL = "gemini-2.5-flash-lite"
 OPENROUTER_MODEL = "kwaipilot/kat-coder-pro:free"
 
 # Performance Settings (constants)
-BATCH_SIZE = 40
+BATCH_SIZE = 30
 MAX_CONCURRENT = 5
 MAX_OUTPUT_TOKENS = 32768
 RATE_LIMIT_RPM = 10
