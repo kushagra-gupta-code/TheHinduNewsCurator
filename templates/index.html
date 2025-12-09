@@ -37,6 +37,10 @@
                 <label for="date">Date:</label>
                 <input type="date" id="date" value="">
             </div>
+            <div class="control-group" style="display: flex; align-items: center; gap: 5px;">
+                <input type="checkbox" id="forceRefresh" style="width: auto;">
+                <label for="forceRefresh" style="margin: 0; cursor: pointer;">Force Refresh</label>
+            </div>
             <div class="control-group">
                 <label for="topCount">Top:</label>
                 <select id="topCount">
@@ -168,18 +172,21 @@
 
             const edition = document.getElementById('edition').value;
             const date = document.getElementById('date').value;
+            const forceRefresh = document.getElementById('forceRefresh').checked;
 
             try {
                 const response = await fetch('/scrape', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ edition, date })
+                    body: JSON.stringify({ edition, date, force_refresh: forceRefresh })
                 });
 
                 const data = await response.json();
 
                 if (data.success) {
-                    status.textContent = `✅ Scraped ${data.count} articles`;
+                    let msg = `✅ Scraped ${data.count} articles`;
+                    if (data.from_cache) msg += " ⚡ (Cached)";
+                    status.textContent = msg;
                     document.getElementById('stats').textContent = `${data.sections.length} sections`;
                     analyzeBtn.disabled = false;
                 } else {
@@ -202,15 +209,15 @@
             btn.disabled = true;
             btn.textContent = '🤔 Thinking...';
             status.textContent = '🤔 Preparing AI analysis...';
-            
+
             // Start SSE for live progress updates
             const eventSource = new EventSource('/analyze-stream');
-            
-            eventSource.onmessage = function(event) {
+
+            eventSource.onmessage = function (event) {
                 const [stage, message] = event.data.split('|');
                 if (stage !== 'heartbeat') {
                     status.textContent = message;
-                    
+
                     if (stage === 'thinking') {
                         btn.textContent = '🤔 Thinking...';
                     } else if (stage === 'progress') {
@@ -220,8 +227,8 @@
                     }
                 }
             };
-            
-            eventSource.onerror = function() {
+
+            eventSource.onerror = function () {
                 eventSource.close();
             };
 
@@ -336,7 +343,7 @@
 
             iframe.src = article.smry_url;
             modal.classList.add('active');
-            
+
             // Prevent body scroll and focus modal for scroll control
             document.body.style.overflow = 'hidden';
             const modalContent = document.querySelector('.modal-content');
@@ -345,8 +352,13 @@
         }
 
         function onOverlayClick() {
+            const overlay = document.getElementById('iframeOverlay');
+            overlay.classList.add('tapped');
             document.getElementById('scoreBreakdown').classList.add('hidden');
-            document.getElementById('iframeOverlay').style.display = 'none';
+
+            // Force focus to iframe for mobile scrolling
+            const iframe = document.getElementById('previewFrame');
+            iframe.focus();
         }
 
         function toggleScores() {

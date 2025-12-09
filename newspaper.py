@@ -44,6 +44,8 @@ from config import (
     ConfigError,
 )
 
+from cache_manager import CacheManager
+
 # Configure Gemini API
 if not GEMINI_API_KEY:
     raise ConfigError("GEMINI_API_KEY not found. Please set it in .env file.")
@@ -213,6 +215,20 @@ class NewsArticle:
         self.analysis = None
         self.content = ""
 
+    @classmethod
+    def from_dict(cls, data):
+        article = cls(
+            title=data.get("title", ""),
+            url=data.get("url", ""),
+            page=data.get("page", ""),
+            section=data.get("section", ""),
+            teaser=data.get("teaser", "")
+        )
+        article.impact_score = data.get("impact_score", 0)
+        article.analysis = data.get("analysis")
+        article.content = data.get("content", "")
+        return article
+
 
 class HinduNewsCurator:
     def __init__(self, date=None, edition=None):
@@ -232,11 +248,26 @@ class HinduNewsCurator:
         self.llm_provider = HybridLLMProvider()
         print(f"🤖 LLM Provider Status: {self.llm_provider.get_provider_status()}")
 
-    def scrape_all_sections(self):
+        # Initialize Cache Manager
+        self.cache_manager = CacheManager()
+        self.from_cache = False
+
+    def scrape_all_sections(self, force_refresh=False):
         """Scrape all sections by extracting embedded JSON from the page"""
         print(
             f"\n🔍 Starting to scrape The Hindu Today's Paper ({self.date}, edition: {self.edition})...\n"
         )
+
+        # Check cache first
+        if not force_refresh:
+            cached_data = self.cache_manager.load(self.date, self.edition)
+            if cached_data:
+                print(f"⚡ Loading data from cache ({len(cached_data.get('articles', []))} articles)...")
+                self.articles = [NewsArticle.from_dict(a) for a in cached_data.get("articles", [])]
+                self.top_20 = [NewsArticle.from_dict(a) for a in cached_data.get("top_20", [])]
+                self.from_cache = True
+                print("✅ Cache loaded successfully!")
+                return
 
         try:
             response = requests.get(
@@ -601,6 +632,10 @@ Return JSON with MINIFIED keys to save space:
             print("No articles to analyze.")
             return
 
+        if self.from_cache:
+            print("⚡ Skipping analysis (loaded from cache)")
+            return
+
         if USE_ASYNC_OPTIMIZATION:
             return self._analyze_all_articles_optimized()
         else:
@@ -722,6 +757,9 @@ Return JSON with MINIFIED keys to save space:
 
     def curate_top_n(self, top_count=20):
         """Select top N articles with anti-bubble diversification"""
+        
+
+
         print(f"🎯 Curating top {top_count} anti-bubble articles...\n")
 
         # Sort by impact score
@@ -774,6 +812,16 @@ Return JSON with MINIFIED keys to save space:
             count = sum(1 for a in self.top_20 if a.section == section)
             if count > 0:
                 print(f"  {section}: {count} articles")
+
+        # Save to cache after curation
+        if not self.from_cache:
+            self.cache_manager.save(
+                self.date, 
+                self.edition, 
+                self.articles, 
+                self.top_20,
+                self.llm_provider.get_provider_status()
+            )
 
         return self.top_20
 

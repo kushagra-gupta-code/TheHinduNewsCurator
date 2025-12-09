@@ -73,22 +73,27 @@ def scrape():
     global curator, status
 
     edition = request.json.get("edition", DEFAULT_EDITION)
+    edition = request.json.get("edition", DEFAULT_EDITION)
     date = request.json.get("date", None)
+    force_refresh = request.json.get("force_refresh", False)
 
     try:
         status = {"message": "Scraping articles...", "step": "scraping"}
         curator = HinduNewsCurator(date=date, edition=edition)
-        curator.scrape_all_sections()
+        curator = HinduNewsCurator(date=date, edition=edition)
+        curator.scrape_all_sections(force_refresh=force_refresh)
 
         status = {
             "message": f"Scraped {len(curator.articles)} articles",
             "step": "scraped",
+            "from_cache": getattr(curator, "from_cache", False)
         }
 
         return jsonify(
             {
                 "success": True,
                 "count": len(curator.articles),
+                "from_cache": getattr(curator, "from_cache", False),
                 "sections": list(set(a.section for a in curator.articles)),
             }
         )
