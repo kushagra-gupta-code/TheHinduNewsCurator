@@ -792,7 +792,13 @@ td {
 
     .reasoning {
         font-size: 0.7rem;
-        -webkit-line-clamp: 1;
+        display: block;
+        -webkit-line-clamp: unset;
+        line-clamp: unset;
+        /* Standard property */
+        overflow: visible;
+        height: auto;
+        white-space: normal;
     }
 
     .score {
